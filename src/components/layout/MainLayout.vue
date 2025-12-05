@@ -33,6 +33,7 @@ const pageTitles: Record<string, string> = {
   '/video': '视频分析',
   '/interview': '面试辅助',
   '/recommend': '最终推荐',
+  '/dev-tools': '开发测试',
   '/settings': '系统设置'
 }
 

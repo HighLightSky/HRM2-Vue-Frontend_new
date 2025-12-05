@@ -28,6 +28,10 @@
 
     <!-- 底部设置 -->
     <div class="sidebar-footer">
+      <router-link to="/dev-tools" class="nav-item" :class="{ active: isActive('/dev-tools') }">
+        <el-icon :size="20"><Promotion /></el-icon>
+        <span class="nav-label">开发测试</span>
+      </router-link>
       <router-link to="/settings" class="nav-item" :class="{ active: isActive('/settings') }">
         <el-icon :size="20"><Setting /></el-icon>
         <span class="nav-label">系统设置</span>
@@ -47,7 +51,8 @@ import {
   VideoCamera,
   ChatDotRound,
   Trophy,
-  Setting
+  Setting,
+  Promotion
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

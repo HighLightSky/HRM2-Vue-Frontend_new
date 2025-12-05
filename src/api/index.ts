@@ -642,4 +642,40 @@ export interface LibraryResume {
   updated_at?: string
 }
 
+/**
+ * 开发测试工具 API
+ */
+export const devToolsApi = {
+  // 生成随机简历
+  generateResumes: async (params: {
+    position: {
+      position: string
+      description?: string
+      required_skills?: string[]
+      optional_skills?: string[]
+      min_experience?: number
+      education?: string[]
+    }
+    count: number
+  }): Promise<{
+    added: Array<{ id: string; filename: string; candidate_name: string }>
+    skipped: Array<{ filename: string; reason: string }>
+    added_count: number
+    skipped_count: number
+    requested_count: number
+  }> => {
+    const response = await fetch(`${API_BASE}/resume-screening/dev/generate-resumes/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    })
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}))
+      throw new Error(error.message || `生成简历失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data
+  }
+}
+
 export { apiClient }

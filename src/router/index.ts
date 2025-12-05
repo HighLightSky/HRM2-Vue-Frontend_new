@@ -57,6 +57,12 @@ const router = createRouter({
           meta: { title: '最终推荐 - HRM2招聘管理系统' }
         },
         {
+          path: 'dev-tools',
+          name: 'dev-tools',
+          component: () => import('@/views/DevToolsView.vue'),
+          meta: { title: '开发测试 - HRM2招聘管理系统' }
+        },
+        {
           path: 'settings',
           name: 'settings',
           component: () => import('@/views/SettingsView.vue'),
