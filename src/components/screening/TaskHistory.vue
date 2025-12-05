@@ -36,6 +36,9 @@
         <div class="history-info">
           <div class="history-name">
             {{ getHistoryTaskName(task) }}
+            <el-tag v-if="getTaskPosition(task)" type="info" size="small" effect="light" class="position-tag">
+              {{ getTaskPosition(task) }}
+            </el-tag>
           </div>
           <div class="history-meta">
             <el-tag :type="getStatusType(task.status)" size="small">
@@ -73,6 +76,13 @@
             @click.stop="$emit('addToGroup', task)"
           >
             加入组
+          </el-button>
+          <el-button
+            size="small"
+            type="danger"
+            @click.stop="$emit('delete', task.task_id)"
+          >
+            删除
           </el-button>
         </div>
       </div>
@@ -115,6 +125,7 @@ const emit = defineEmits<{
   showDetail: [task: ResumeScreeningTask]
   downloadReport: [reportId: string]
   addToGroup: [task: ResumeScreeningTask]
+  delete: [taskId: string]
   'update:currentPage': [page: number]
   'update:pageSize': [size: number]
   pageChange: []
@@ -127,6 +138,21 @@ const {
   getHistoryTaskName, 
   getHistoryTaskScore 
 } = useScreeningUtils()
+
+// 获取任务对应的岗位
+const getTaskPosition = (task: ResumeScreeningTask): string => {
+  // 优先从 resume_data 获取
+  if (task.resume_data && task.resume_data.length > 0) {
+    const rd = task.resume_data[0] as any
+    if (rd?.position_title) return rd.position_title
+  }
+  // 其次从 reports 获取
+  if (task.reports && task.reports.length > 0) {
+    const posInfo = task.reports[0]?.position_info
+    if (posInfo?.position) return posInfo.position
+  }
+  return ''
+}
 
 // 状态筛选选项
 const statusFilters = [
@@ -198,10 +224,19 @@ const handlePageChange = () => {
 
 .history-info {
   .history-name {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     font-size: 14px;
     font-weight: 500;
     color: #303133;
     margin-bottom: 6px;
+    
+    .position-tag {
+      background-color: #e6f7ff;
+      border-color: #91d5ff;
+      color: #1890ff;
+    }
   }
 
   .history-meta {

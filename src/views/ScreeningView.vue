@@ -28,6 +28,7 @@
         <ResumeUpload
           ref="resumeUploadRef"
           :is-submitting="isSubmitting"
+          :position-name="positionData.position"
           @submit="submitFiles"
           @preview="previewFile"
           @files-changed="handleFilesChanged"
@@ -54,6 +55,7 @@
           @show-detail="showHistoryTaskDetail"
           @download-report="downloadReport"
           @add-to-group="showAddToGroupDialogFromHistory"
+          @delete="deleteHistoryTask"
           @page-change="loadHistoryTasks"
         />
       </div>
@@ -174,9 +176,10 @@ const loadPositionsList = async () => {
     const result = await positionApi.getPositions({ include_resumes: true })
     positionsList.value = (result.positions || []).map(p => ({ ...p, showAll: false }))
     
-    if (positionsList.value.length > 0 && !selectedPositionId.value) {
-      selectedPositionId.value = positionsList.value[0].id || null
-      positionData.value = positionsList.value[0]
+    const firstPosition = positionsList.value[0]
+    if (firstPosition && !selectedPositionId.value) {
+      selectedPositionId.value = firstPosition.id ?? null
+      positionData.value = firstPosition
     }
   } catch (err) {
     console.error('加载岗位列表失败:', err)
@@ -344,6 +347,25 @@ const filterByStatus = (status: string) => {
   historyParams.status = status
   historyParams.page = 1
   loadHistoryTasks()
+}
+
+const deleteHistoryTask = async (taskId: string) => {
+  try {
+    await ElMessageBox.confirm('确定要删除这条初筛记录吗？删除后无法恢复。', '确认删除', {
+      confirmButtonText: '删除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    
+    await screeningApi.deleteTask(taskId)
+    ElMessage.success('删除成功')
+    loadHistoryTasks()
+  } catch (err: any) {
+    if (err !== 'cancel') {
+      console.error('删除失败:', err)
+      ElMessage.error('删除失败')
+    }
+  }
 }
 
 // ==================== 下载报告 ====================

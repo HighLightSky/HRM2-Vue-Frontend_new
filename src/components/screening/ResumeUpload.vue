@@ -2,7 +2,12 @@
   <el-card class="upload-card" shadow="hover">
     <template #header>
       <div class="card-header">
-        <span class="card-title">简历上传与初筛</span>
+        <div class="card-title-wrapper">
+          <span class="card-title">简历上传与初筛</span>
+          <el-tag v-if="positionName" type="info" effect="light" class="position-tag">
+            {{ positionName }}
+          </el-tag>
+        </div>
         <el-tag :type="uploadStatus.type" effect="plain">{{ uploadStatus.text }}</el-tag>
       </div>
     </template>
@@ -85,6 +90,7 @@ import { useScreeningUtils } from '@/composables/useScreeningUtils'
 
 const props = defineProps<{
   isSubmitting: boolean
+  positionName?: string
 }>()
 
 const emit = defineEmits<{
@@ -163,10 +169,22 @@ defineExpose({
   align-items: center;
 }
 
+.card-title-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .card-title {
   font-size: 16px;
   font-weight: 600;
   color: #303133;
+}
+
+.position-tag {
+  background-color: #e6f7ff;
+  border-color: #91d5ff;
+  color: #1890ff;
 }
 
 .upload-area {

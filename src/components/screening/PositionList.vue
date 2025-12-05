@@ -2,7 +2,17 @@
   <el-card class="groups-card" shadow="hover">
     <template #header>
       <div class="card-header">
-        <span class="card-title">招聘岗位</span>
+        <div class="header-left">
+          <span class="card-title">招聘岗位</span>
+          <el-button 
+            type="info" 
+            size="small" 
+            link 
+            @click="toggleExpand"
+          >
+            {{ isExpanded ? '收起详情' : '展开详情' }}
+          </el-button>
+        </div>
         <router-link to="/positions">
           <el-button type="primary" size="small">管理岗位</el-button>
         </router-link>
@@ -32,6 +42,7 @@
           <div class="group-actions">
             <span class="group-meta">{{ pos.resume_count || 0 }} 份</span>
             <el-button 
+              v-if="isExpanded"
               type="primary" 
               size="small" 
               link 
@@ -40,8 +51,8 @@
           </div>
         </div>
         
-        <!-- 岗位中的简历列表 -->
-        <div v-if="pos.resumes && pos.resumes.length > 0" class="resumes-preview">
+        <!-- 岗位中的简历列表 - 展开时才显示 -->
+        <div v-if="isExpanded && pos.resumes && pos.resumes.length > 0" class="resumes-preview">
           <div class="resumes-list">
             <div 
               v-for="resume in getPagedResumes(pos)" 
@@ -81,13 +92,14 @@
             >下一页</el-button>
           </div>
         </div>
-        <div v-else class="no-resumes">暂无简历</div>
+        <div v-else-if="isExpanded" class="no-resumes">暂无简历</div>
       </div>
     </div>
   </el-card>
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 import type { PositionData, ResumeData } from '@/types'
 
@@ -95,6 +107,13 @@ const props = defineProps<{
   positions: PositionData[]
   selectedPositionId: string | null
 }>()
+
+// 展开/收起状态
+const isExpanded = ref(true)
+
+const toggleExpand = () => {
+  isExpanded.value = !isExpanded.value
+}
 
 defineEmits<{
   select: [pos: PositionData]
@@ -136,6 +155,12 @@ const nextPage = (pos: PositionData) => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  
+  .header-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
 }
 
 .card-title {

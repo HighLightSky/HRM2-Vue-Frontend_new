@@ -206,6 +206,16 @@ export const screeningApi = {
     return { tasks: result.tasks || [], total: result.total || 0 }
   },
 
+  // 删除任务
+  deleteTask: async (taskId: string): Promise<void> => {
+    const response = await fetch(`${API_BASE}/resume-screening/tasks/${taskId}/`, {
+      method: 'DELETE'
+    })
+    if (!response.ok) {
+      throw new Error(`删除失败: ${response.status}`)
+    }
+  },
+
   // 获取简历详情
   getResumeDetail: async (resumeId: string): Promise<ResumeData | null> => {
     try {
