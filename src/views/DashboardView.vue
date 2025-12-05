@@ -154,8 +154,8 @@ import {
   VideoCamera,
   ChatDotRound
 } from '@element-plus/icons-vue'
-import { screeningApi, videoApi, recommendApi } from '@/api'
-import type { ResumeScreeningTask, ResumeGroup, VideoAnalysis, InterviewEvaluationTask } from '@/types'
+import { screeningApi, videoApi } from '@/api'
+import type { ResumeScreeningTask, ResumeGroup, VideoAnalysis } from '@/types'
 
 // 加载状态
 const loading = ref(true)
@@ -304,29 +304,30 @@ const getGroupStatusText = (status: string) => {
 const fetchData = async () => {
   loading.value = true
   try {
-    const [tasksResult, groups, videos, evaluations] = await Promise.all([
-      screeningApi.getTaskHistory({ page: 1, page_size: 5 }).catch(() => ({ results: [], count: 0 })),
+    const [tasksResult, groups, videos] = await Promise.all([
+      screeningApi.getTaskHistory({ page: 1, page_size: 10 }).catch(() => ({ tasks: [], total: 0 })),
       screeningApi.getGroups().catch(() => []),
-      videoApi.getVideoList().catch(() => []),
-      recommendApi.getEvaluationList().catch(() => [])
+      videoApi.getVideoList().catch(() => [])
     ])
 
-    const tasks = tasksResult.results || []
+    const tasks = tasksResult.tasks || []
+    const groupsArr = Array.isArray(groups) ? groups : []
+    const videosArr = Array.isArray(videos) ? videos : []
     
     recentTasks.value = tasks.slice(0, 5)
-    recentGroups.value = groups.slice(0, 5)
-    recentVideos.value = videos.slice(0, 6)
+    recentGroups.value = groupsArr.slice(0, 5)
+    recentVideos.value = videosArr.slice(0, 6)
 
     // 计算统计数据
-    stats.totalResumes = groups.reduce((sum: number, g: ResumeGroup) => sum + g.resume_count, 0)
+    stats.totalResumes = groupsArr.reduce((sum: number, g: ResumeGroup) => sum + (g.resume_count || 0), 0)
     stats.pendingScreening = tasks.filter((t: ResumeScreeningTask) => 
       t.status === 'pending' || t.status === 'running'
     ).length
     stats.completedInterviews = tasks.filter((t: ResumeScreeningTask) => 
       t.status === 'completed'
     ).length
-    stats.pendingRecommendations = evaluations.filter((e: InterviewEvaluationTask) => 
-      e.status === 'pending' || e.status === 'processing'
+    stats.pendingRecommendations = groupsArr.filter((g: ResumeGroup) => 
+      g.status === 'video_analyzed'
     ).length
 
     // 更新统计卡片

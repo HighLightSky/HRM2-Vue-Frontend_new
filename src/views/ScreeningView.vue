@@ -535,13 +535,71 @@ const parseFileContent = async (resumeFile: ResumeFile) => {
   updateUploadStatus()
 }
 
-const readFileAsText = (file: File): Promise<string> => {
+const readFileAsArrayBuffer = (file: File): Promise<ArrayBuffer> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsText(file)
+    reader.onload = () => resolve(reader.result as ArrayBuffer)
+    reader.onerror = () => reject(new Error('文件读取失败'))
+    reader.readAsArrayBuffer(file)
   })
+}
+
+const readFileAsText = async (file: File): Promise<string> => {
+  const name = file.name.toLowerCase()
+  const ext = name.split('.').pop() || ''
+
+  // TXT 文件直接读取
+  if (file.type.includes('text') || ext === 'txt') {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(reader.result as string || '')
+      reader.onerror = () => reject(new Error('文件读取失败'))
+      reader.readAsText(file)
+    })
+  }
+
+  // Word 文件 (.doc, .docx) 使用 mammoth 解析
+  if (ext === 'doc' || ext === 'docx') {
+    try {
+      const mammoth = await import('mammoth')
+      const arrayBuffer = await readFileAsArrayBuffer(file)
+      const result = await mammoth.extractRawText({ arrayBuffer })
+      return result.value || `[${file.name} 的内容解析为空]`
+    } catch (err) {
+      console.error('mammoth 解析失败:', err)
+      return `[${file.name} - Word 解析失败]`
+    }
+  }
+
+  // PDF 文件使用 pdfjs-dist 解析
+  if (ext === 'pdf') {
+    try {
+      const arrayBuffer = await readFileAsArrayBuffer(file)
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf.mjs')
+      
+      // 设置 worker
+      pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`
+
+      const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer })
+      const pdf = await loadingTask.promise
+
+      let fullText = ''
+      for (let i = 1; i <= pdf.numPages; i++) {
+        const page = await pdf.getPage(i)
+        const content = await page.getTextContent()
+        const strings = content.items.map((item: any) => item.str).join(' ')
+        fullText += strings + '\n'
+      }
+
+      return fullText.trim() || `[${file.name} 的内容解析为空]`
+    } catch (err) {
+      console.error('pdf.js 解析失败:', err)
+      return `[${file.name} - PDF 解析失败]`
+    }
+  }
+
+  // 其他格式
+  return `[${file.name} - 不支持的文件格式]`
 }
 
 const removeFile = (index: number) => {
@@ -577,17 +635,32 @@ const updateUploadStatus = () => {
 // 提交文件
 const submitFiles = async () => {
   const parsedFiles = selectedFiles.value.filter(f => f.status === 'parsed')
-  if (parsedFiles.length === 0) return
+  if (parsedFiles.length === 0) {
+    ElMessage.warning('没有已解析的文件可提交')
+    return
+  }
 
   isSubmitting.value = true
   try {
-    for (const file of parsedFiles) {
-      const formData = new FormData()
-      formData.append('resume_file', file.file)
-      formData.append('position_info', JSON.stringify(positionData.value))
+    // 构建符合后端期望的 JSON 格式
+    const uploadData = {
+      position: positionData.value,
+      resumes: parsedFiles.map(file => ({
+        name: file.name,
+        content: file.content || '',
+        metadata: {
+          size: file.file.size,
+          type: file.file.type || 'text/plain'
+        }
+      }))
+    }
 
-      const result = await screeningApi.submitScreening(formData)
+    console.log('提交数据:', uploadData)
 
+    const result = await screeningApi.submitScreening(uploadData)
+
+    // 将任务添加到处理队列
+    parsedFiles.forEach(file => {
       processingQueue.value.unshift({
         name: file.name,
         task_id: result.task_id,
@@ -596,10 +669,10 @@ const submitFiles = async () => {
         created_at: new Date().toISOString(),
         applied_position: positionData.value.position
       })
-    }
+    })
 
     clearAll()
-    ElMessage.success('简历已提交进行初筛')
+    ElMessage.success(`成功提交 ${parsedFiles.length} 份简历进行初筛`)
     startTaskPolling()
   } catch (err) {
     console.error('提交失败:', err)

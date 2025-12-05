@@ -70,16 +70,23 @@ export const positionApi = {
  */
 export const screeningApi = {
   // 提交筛选任务
-  submitScreening: async (formData: FormData): Promise<ResumeScreeningTask> => {
+  // 期望数据格式: { position: {...}, resumes: [{ name, content, metadata }] }
+  submitScreening: async (data: {
+    position: Record<string, unknown>
+    resumes: Array<{ name: string; content: string; metadata?: { size: number; type: string } }>
+  }): Promise<ResumeScreeningTask> => {
     const response = await fetch(`${API_BASE}/resume-screening/screening/`, {
       method: 'POST',
-      body: formData
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
     })
     if (!response.ok) {
+      const errorText = await response.text()
+      console.error('API 错误响应:', errorText)
       throw new Error(`提交失败: ${response.status}`)
     }
     const result = await response.json()
-    return result.data || result
+    return result
   },
 
   // 查询任务状态
@@ -97,7 +104,7 @@ export const screeningApi = {
     status?: string
     page?: number
     page_size?: number
-  }): Promise<{ results: ResumeScreeningTask[]; count: number }> => {
+  }): Promise<{ tasks: ResumeScreeningTask[]; total: number }> => {
     const searchParams = new URLSearchParams()
     if (params?.status) searchParams.append('status', params.status)
     if (params?.page) searchParams.append('page', params.page.toString())
@@ -108,7 +115,8 @@ export const screeningApi = {
       throw new Error(`获取历史失败: ${response.status}`)
     }
     const result = await response.json()
-    return result.data || result
+    // 后端返回 { tasks: [...], total, page, page_size }
+    return { tasks: result.tasks || [], total: result.total || 0 }
   },
 
   // 获取简历组列表
@@ -118,23 +126,25 @@ export const screeningApi = {
       throw new Error(`获取简历组失败: ${response.status}`)
     }
     const result = await response.json()
-    return result.data || result
+    // 后端返回 { groups: [...], total, page, page_size }
+    return result.groups || []
   },
 
   // 获取简历组详情
   getGroupDetail: async (groupId: string): Promise<ResumeGroup> => {
-    const response = await fetch(`${API_BASE}/resume-screening/groups/${groupId}/`)
+    const response = await fetch(`${API_BASE}/resume-screening/groups/${groupId}/?include_resumes=true`)
     if (!response.ok) {
       throw new Error(`获取简历组详情失败: ${response.status}`)
     }
     const result = await response.json()
-    return result.data || result
+    // 后端返回 { group: {...}, summary: {...} }
+    return result.group || result
   },
 
   // 创建简历组
   createGroup: async (data: {
     group_name: string
-    position_title: string
+    resume_data_ids: string[]
     description?: string
   }): Promise<ResumeGroup> => {
     const response = await fetch(`${API_BASE}/resume-screening/groups/create/`, {
@@ -146,7 +156,8 @@ export const screeningApi = {
       throw new Error(`创建简历组失败: ${response.status}`)
     }
     const result = await response.json()
-    return result.data || result
+    // 后端返回 { message, group_id, group_name, resume_count }
+    return result
   },
 
   // 添加简历到组
@@ -219,7 +230,8 @@ export const videoApi = {
       throw new Error(`获取视频列表失败: ${response.status}`)
     }
     const result = await response.json()
-    return result.data || result
+    // 后端返回 { videos: [...], total, page, page_size }
+    return result.videos || []
   }
 }
 
@@ -252,14 +264,15 @@ export const recommendApi = {
     return result.data || result
   },
 
-  // 获取评估任务列表
-  getEvaluationList: async (): Promise<InterviewEvaluationTask[]> => {
-    const response = await fetch(`${API_BASE}/final-recommend/interview-evaluation/`)
+  // 获取评估任务状态（根据组ID）
+  getEvaluationByGroup: async (groupId: string): Promise<InterviewEvaluationTask | null> => {
+    const response = await fetch(`${API_BASE}/final-recommend/interview-evaluation/?group_id=${groupId}`)
     if (!response.ok) {
-      throw new Error(`获取评估列表失败: ${response.status}`)
+      throw new Error(`获取评估状态失败: ${response.status}`)
     }
     const result = await response.json()
-    return result.data || result
+    // 后端返回 { status: 'success', data: {...} | null }
+    return result.data || null
   },
 
   // 停止评估任务
