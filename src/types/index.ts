@@ -98,14 +98,17 @@ export interface ResumeData {
   id: string
   position_title: string
   candidate_name: string
-  resume_content: string
+  resume_content?: string
   scores?: ScreeningScore
+  screening_score?: ScreeningScore  // 别名
   summary?: string
+  screening_summary?: string  // 别名
   report_md_url?: string
   report_json_url?: string
   video_analysis_status?: string
   video_analysis_result?: VideoAnalysisResult
   created_at: string
+  task_id?: string  // 关联的任务ID
 }
 
 /**

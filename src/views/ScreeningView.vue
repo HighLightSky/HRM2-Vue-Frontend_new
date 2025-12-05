@@ -58,7 +58,7 @@
             <div class="card-header">
               <span class="card-title">简历组</span>
               <el-button type="primary" size="small" @click="showCreateGroupDialog">
-                新建分组
+                创建组
               </el-button>
             </div>
           </template>
@@ -66,16 +66,46 @@
             <el-empty description="暂无简历组" :image-size="60" />
           </div>
           <div v-else class="groups-list">
-            <div v-for="group in resumeGroups" :key="group.id" class="group-item">
-              <div class="group-info">
-                <div class="group-name">{{ group.group_name }}</div>
-                <div class="group-meta">
-                  {{ group.position_title }} · {{ group.resume_count }} 份简历
+            <div v-for="group in resumeGroups" :key="group.id" class="group-item-card">
+              <div class="group-header">
+                <div class="group-title">
+                  <span class="group-name">{{ group.group_name || group.position_title }}</span>
+                  <el-tag :type="getGroupStatusType(group.status)" size="small">
+                    {{ getGroupStatusText(group.status) }}
+                  </el-tag>
+                </div>
+                <div class="group-meta">{{ group.resume_count }} 份简历</div>
+              </div>
+              <!-- 组中的简历列表 -->
+              <div v-if="group.resumes && group.resumes.length > 0" class="resumes-preview">
+                <div class="resumes-title">组中的简历:</div>
+                <div class="resumes-list">
+                  <div 
+                    v-for="(resume, index) in group.resumes.slice(0, group.showAll ? undefined : 3)" 
+                    :key="resume.id" 
+                    class="resume-item"
+                  >
+                    <div class="resume-info">
+                      <span class="resume-name">{{ resume.candidate_name || '未知候选人' }}</span>
+                      <span class="resume-position">{{ resume.position_title }}</span>
+                    </div>
+                    <div class="resume-score" v-if="resume.screening_score">
+                      <el-tag size="small" type="success">
+                        综合: {{ resume.screening_score.comprehensive_score }}
+                      </el-tag>
+                    </div>
+                  </div>
+                  <div 
+                    v-if="group.resumes.length > 3" 
+                    class="toggle-resumes"
+                    @click="toggleGroupResumes(group)"
+                  >
+                    <span>{{ group.showAll ? '收起' : `展开剩余 ${group.resumes.length - 3} 份简历` }}</span>
+                    <el-icon><ArrowDown v-if="!group.showAll" /><ArrowUp v-else /></el-icon>
+                  </div>
                 </div>
               </div>
-              <el-tag :type="getGroupStatusType(group.status)" size="small">
-                {{ getGroupStatusText(group.status) }}
-              </el-tag>
+              <div v-else class="no-resumes">暂无简历</div>
             </div>
           </div>
         </el-card>
@@ -264,13 +294,26 @@
             >
               <div class="history-info">
                 <div class="history-name">
-                  {{ task.reports?.[0]?.report_filename || '未知文件' }}
+                  {{ getHistoryTaskName(task) }}
                 </div>
                 <div class="history-meta">
                   <el-tag :type="getStatusType(task.status)" size="small">
                     {{ getStatusText(task.status) }}
                   </el-tag>
-                  <span>{{ formatDate(task.created_at) }}</span>
+                  <span v-if="task.status === 'running'">进度: {{ task.progress }}%</span>
+                  <span class="history-time">{{ formatDate(task.created_at) }}</span>
+                </div>
+                <!-- 评分显示 -->
+                <div v-if="task.status === 'completed' && getHistoryTaskScore(task)" class="history-scores">
+                  <el-tag type="success" size="small" effect="plain">
+                    综合: {{ getHistoryTaskScore(task)?.comprehensive_score }}
+                  </el-tag>
+                  <el-tag type="info" size="small" effect="plain">
+                    HR: {{ getHistoryTaskScore(task)?.hr_score }}
+                  </el-tag>
+                  <el-tag type="warning" size="small" effect="plain">
+                    技术: {{ getHistoryTaskScore(task)?.technical_score }}
+                  </el-tag>
                 </div>
               </div>
               <div class="history-actions">
@@ -281,6 +324,14 @@
                   @click="downloadReport(task.reports[0].report_id)"
                 >
                   下载
+                </el-button>
+                <el-button
+                  v-if="task.status === 'completed'"
+                  size="small"
+                  type="primary"
+                  @click="showAddToGroupDialogFromHistory(task)"
+                >
+                  加入组
                 </el-button>
               </div>
             </div>
@@ -304,21 +355,61 @@
     </div>
 
     <!-- 创建简历组对话框 -->
-    <el-dialog v-model="createGroupDialogVisible" title="新建简历组" width="500px">
-      <el-form :model="newGroupForm" label-width="80px">
-        <el-form-item label="组名称">
-          <el-input v-model="newGroupForm.group_name" placeholder="请输入组名称" />
-        </el-form-item>
-        <el-form-item label="岗位">
-          <el-input v-model="newGroupForm.position_title" placeholder="岗位名称" />
-        </el-form-item>
-        <el-form-item label="描述">
-          <el-input v-model="newGroupForm.description" type="textarea" placeholder="可选描述" />
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="createGroupDialogVisible" title="创建简历组" width="80%" @close="handleCreateDialogClose">
+      <el-alert
+        title="请选择要加入新简历组的简历，注意所选简历的岗位信息必须一致"
+        type="info"
+        show-icon
+        style="margin-bottom: 16px;"
+      />
+      
+      <div class="resumes-selection">
+        <el-table
+          :data="availableResumes"
+          row-key="id"
+          style="width: 100%"
+          v-loading="resumesLoading"
+          max-height="400"
+        >
+          <el-table-column label="选择" width="60" align="center">
+            <template #default="{ row }">
+              <el-checkbox
+                v-model="selectedResumeIds"
+                :label="row.id"
+                :disabled="isResumeDisabled(row)"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column prop="candidate_name" label="候选人" min-width="120">
+            <template #default="{ row }">
+              {{ row.candidate_name || '未知候选人' }}
+            </template>
+          </el-table-column>
+          <el-table-column prop="position_title" label="岗位" min-width="150" />
+          <el-table-column label="综合评分" width="100" align="center">
+            <template #default="{ row }">
+              <span v-if="row.screening_score">{{ row.screening_score.comprehensive_score }}</span>
+              <span v-else>N/A</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="提交时间" width="160">
+            <template #default="{ row }">
+              {{ formatDate(row.created_at) }}
+            </template>
+          </el-table-column>
+        </el-table>
+      </div>
+      
       <template #footer>
         <el-button @click="createGroupDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="createGroup">创建</el-button>
+        <el-button 
+          type="primary" 
+          @click="createGroup"
+          :disabled="selectedResumeIds.length === 0"
+          :loading="creatingGroup"
+        >
+          确认创建 ({{ selectedResumeIds.length }})
+        </el-button>
       </template>
     </el-dialog>
 
@@ -354,7 +445,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Upload, Document } from '@element-plus/icons-vue'
+import { Upload, Document, ArrowDown, ArrowUp } from '@element-plus/icons-vue'
 import { positionApi, screeningApi } from '@/api'
 import type {
   PositionData,
@@ -362,7 +453,8 @@ import type {
   ResumeScreeningTask,
   ResumeFile,
   ProcessingTask,
-  ScreeningScore
+  ScreeningScore,
+  ResumeData
 } from '@/types'
 
 // 岗位数据
@@ -403,10 +495,15 @@ const historyLoading = ref(false)
 const createGroupDialogVisible = ref(false)
 const addToGroupDialogVisible = ref(false)
 const previewDialogVisible = ref(false)
-const newGroupForm = reactive({ group_name: '', position_title: '', description: '' })
 const selectedGroupId = ref('')
 const previewFileData = ref<ResumeFile | null>(null)
 const currentTaskForGroup = ref<ProcessingTask | null>(null)
+
+// 创建简历组相关
+const availableResumes = ref<ResumeData[]>([])
+const selectedResumeIds = ref<string[]>([])
+const resumesLoading = ref(false)
+const creatingGroup = ref(false)
 
 // 状态筛选选项
 const statusFilters = [
@@ -425,19 +522,25 @@ const loadPositionData = async () => {
   try {
     const data = await positionApi.getCriteria()
     positionData.value = data
-    newGroupForm.position_title = data.position
   } catch (err) {
     console.error('加载岗位数据失败:', err)
   }
 }
 
-// 加载简历组
+// 加载简历组（包含简历详情）
 const loadResumeGroups = async () => {
   try {
-    resumeGroups.value = await screeningApi.getGroups()
+    const groups = await screeningApi.getGroups({ include_resumes: true })
+    // 为每个组添加 showAll 属性
+    resumeGroups.value = groups.map(g => ({ ...g, showAll: false }))
   } catch (err) {
     console.error('加载简历组失败:', err)
   }
+}
+
+// 切换组中简历的展开/收起状态
+const toggleGroupResumes = (group: ResumeGroup & { showAll?: boolean }) => {
+  group.showAll = !group.showAll
 }
 
 // 加载历史任务
@@ -445,8 +548,8 @@ const loadHistoryTasks = async () => {
   historyLoading.value = true
   try {
     const result = await screeningApi.getTaskHistory(historyParams)
-    historyTasks.value = result.results || []
-    historyTotal.value = result.count || 0
+    historyTasks.value = result.tasks || []
+    historyTotal.value = result.total || 0
   } catch (err) {
     console.error('加载历史任务失败:', err)
   } finally {
@@ -744,24 +847,76 @@ const downloadReport = async (reportId: string) => {
 }
 
 // 简历组相关
-const showCreateGroupDialog = () => {
-  newGroupForm.group_name = ''
-  newGroupForm.description = ''
+const showCreateGroupDialog = async () => {
+  selectedResumeIds.value = []
   createGroupDialogVisible.value = true
+  await loadAvailableResumes()
+}
+
+// 加载可用于创建组的简历
+const loadAvailableResumes = async () => {
+  resumesLoading.value = true
+  try {
+    availableResumes.value = await screeningApi.getAvailableResumes()
+  } catch (err) {
+    console.error('加载可用简历失败:', err)
+    ElMessage.error('加载简历列表失败')
+  } finally {
+    resumesLoading.value = false
+  }
+}
+
+// 检查简历是否应该被禁用（岗位不一致时）
+const isResumeDisabled = (resume: ResumeData) => {
+  if (selectedResumeIds.value.length === 0) return false
+  const firstSelectedResume = availableResumes.value.find(
+    r => selectedResumeIds.value.includes(r.id)
+  )
+  if (!firstSelectedResume) return false
+  return resume.position_title !== firstSelectedResume.position_title
+}
+
+// 关闭创建弹窗时的清理
+const handleCreateDialogClose = () => {
+  selectedResumeIds.value = []
+  availableResumes.value = []
 }
 
 const createGroup = async () => {
-  if (!newGroupForm.group_name) {
-    ElMessage.warning('请输入组名称')
+  if (selectedResumeIds.value.length === 0) {
+    ElMessage.warning('请至少选择一份简历')
     return
   }
+  
+  // 获取选中的简历
+  const selectedResumes = availableResumes.value.filter(
+    r => selectedResumeIds.value.includes(r.id)
+  )
+  
+  // 检查岗位一致性
+  const positionTitles = Array.from(new Set(selectedResumes.map(r => r.position_title)))
+  if (positionTitles.length > 1) {
+    ElMessage.error('所选简历的岗位信息不一致，请重新选择')
+    return
+  }
+  
+  creatingGroup.value = true
   try {
-    await screeningApi.createGroup(newGroupForm)
-    ElMessage.success('创建成功')
+    const groupData = {
+      group_name: `${positionTitles[0]}简历组${new Date().toLocaleDateString()}`,
+      description: `基于${positionTitles[0]}岗位的简历筛选组`,
+      resume_data_ids: selectedResumeIds.value
+    }
+    
+    await screeningApi.createGroup(groupData)
+    ElMessage.success('简历组创建成功')
     createGroupDialogVisible.value = false
     loadResumeGroups()
   } catch (err) {
-    ElMessage.error('创建失败')
+    console.error('创建简历组失败:', err)
+    ElMessage.error('创建简历组失败')
+  } finally {
+    creatingGroup.value = false
   }
 }
 
@@ -856,6 +1011,50 @@ const getItemScore = (item: ProcessingTask): ScreeningScore | null => {
   return item.resume_data?.[0]?.scores || null
 }
 
+// 历史任务辅助函数
+const getHistoryTaskName = (task: ResumeScreeningTask): string => {
+  // 优先从 resume_data 获取候选人名
+  if (task.resume_data && task.resume_data.length > 0) {
+    const rd = task.resume_data[0] as any
+    if (rd.candidate_name) return rd.candidate_name
+  }
+  // 其次从 reports 获取文件名
+  if (task.reports && task.reports.length > 0) {
+    const filename = task.reports[0].report_filename
+    // 移除扩展名
+    return filename?.replace(/\.[^/.]+$/, '') || '未知文件'
+  }
+  return '未知文件'
+}
+
+const getHistoryTaskScore = (task: ResumeScreeningTask): ScreeningScore | null => {
+  if (task.resume_data && task.resume_data.length > 0) {
+    return task.resume_data[0].scores || null
+  }
+  return null
+}
+
+const showAddToGroupDialogFromHistory = (task: ResumeScreeningTask) => {
+  // 从历史任务获取 resume_data_id
+  const resumeDataId = (task.resume_data?.[0] as any)?.id || task.reports?.[0]?.report_id
+  if (resumeDataId) {
+    currentTaskForGroup.value = {
+      name: getHistoryTaskName(task),
+      task_id: task.task_id,
+      status: task.status,
+      progress: task.progress,
+      created_at: task.created_at,
+      report_id: resumeDataId,
+      reports: task.reports,
+      resume_data: task.resume_data
+    }
+    selectedGroupId.value = ''
+    addToGroupDialogVisible.value = true
+  } else {
+    ElMessage.warning('无法获取简历数据ID')
+  }
+}
+
 // 生命周期
 onMounted(() => {
   loadPositionData()
@@ -948,28 +1147,109 @@ onUnmounted(() => {
 .groups-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
 }
 
-.group-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px 12px;
+.group-item-card {
+  padding: 12px;
   background: #fafafa;
-  border-radius: 6px;
+  border-radius: 8px;
+  border: 1px solid #e4e7ed;
 
-  .group-name {
-    font-size: 14px;
-    font-weight: 500;
-    color: #303133;
+  .group-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+
+    .group-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+
+      .group-name {
+        font-size: 14px;
+        font-weight: 600;
+        color: #303133;
+      }
+    }
+
+    .group-meta {
+      font-size: 12px;
+      color: #909399;
+    }
   }
 
-  .group-meta {
+  .resumes-preview {
+    .resumes-title {
+      font-size: 12px;
+      color: #606266;
+      margin-bottom: 8px;
+    }
+
+    .resumes-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+
+      .resume-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 10px;
+        background: #fff;
+        border-radius: 4px;
+        border: 1px solid #ebeef5;
+
+        .resume-info {
+          display: flex;
+          flex-direction: column;
+
+          .resume-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #303133;
+          }
+
+          .resume-position {
+            font-size: 11px;
+            color: #909399;
+          }
+        }
+      }
+
+      .toggle-resumes {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 6px;
+        color: #409eff;
+        cursor: pointer;
+        font-size: 12px;
+
+        &:hover {
+          color: #66b1ff;
+        }
+
+        .el-icon {
+          margin-left: 4px;
+        }
+      }
+    }
+  }
+
+  .no-resumes {
     font-size: 12px;
-    color: #909399;
-    margin-top: 4px;
+    color: #c0c4cc;
+    text-align: center;
+    padding: 8px;
   }
+}
+
+// 创建简历组弹窗
+.resumes-selection {
+  max-height: 50vh;
+  overflow-y: auto;
 }
 
 // 右侧面板
@@ -1108,8 +1388,12 @@ onUnmounted(() => {
     color: #909399;
   }
 
-  .scores {
+  .scores,
+  .history-scores {
     margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
     
     .score-badge {
       display: inline-block;
@@ -1121,10 +1405,10 @@ onUnmounted(() => {
     }
   }
 
-  .queue-time {
+  .queue-time,
+  .history-time {
     font-size: 12px;
     color: #c0c4cc;
-    margin-top: 4px;
   }
 }
 

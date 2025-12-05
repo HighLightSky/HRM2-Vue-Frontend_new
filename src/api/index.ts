@@ -120,14 +120,44 @@ export const screeningApi = {
   },
 
   // 获取简历组列表
-  getGroups: async (): Promise<ResumeGroup[]> => {
-    const response = await fetch(`${API_BASE}/resume-screening/groups/`)
+  getGroups: async (params?: { include_resumes?: boolean }): Promise<ResumeGroup[]> => {
+    const searchParams = new URLSearchParams()
+    if (params?.include_resumes) searchParams.append('include_resumes', 'true')
+    const url = `${API_BASE}/resume-screening/groups/${searchParams.toString() ? '?' + searchParams : ''}`
+    const response = await fetch(url)
     if (!response.ok) {
       throw new Error(`获取简历组失败: ${response.status}`)
     }
     const result = await response.json()
     // 后端返回 { groups: [...], total, page, page_size }
     return result.groups || []
+  },
+
+  // 获取可用于创建组的简历数据（从已完成任务中获取）
+  getAvailableResumes: async (): Promise<ResumeData[]> => {
+    const response = await fetch(`${API_BASE}/resume-screening/tasks-history/?status=completed&page_size=100`)
+    if (!response.ok) {
+      throw new Error(`获取简历数据失败: ${response.status}`)
+    }
+    const result = await response.json()
+    // 从任务中提取resume_data
+    const tasks = result.tasks || []
+    const resumes: ResumeData[] = []
+    for (const task of tasks) {
+      if (task.resume_data && Array.isArray(task.resume_data)) {
+        for (const rd of task.resume_data) {
+          resumes.push({
+            id: rd.id,
+            position_title: rd.position_title || task.reports?.[0]?.position_info?.position || '未知岗位',
+            candidate_name: rd.candidate_name || '未知候选人',
+            screening_score: rd.scores || rd.screening_score,
+            created_at: rd.created_at || task.created_at,
+            task_id: task.task_id
+          })
+        }
+      }
+    }
+    return resumes
   },
 
   // 获取简历组详情
