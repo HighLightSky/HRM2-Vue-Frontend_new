@@ -22,6 +22,7 @@
       <div class="main-content">
         <!-- 左侧：对话区 -->
         <ChatPanel
+          ref="chatPanelRef"
           :messages="messages"
           :is-paused="isPaused"
           @ask="$emit('ask', $event)"
@@ -40,7 +41,9 @@
             :alternative-count="config.alternativeCount"
             :interest-points="interestPoints"
             @use="handleUseSuggestion"
+            @edit="handleEditSuggestion"
             @use-interest-point="handleUseInterestPoint"
+            @edit-interest-point="handleEditInterestPoint"
             @dismiss="$emit('clearSuggestions')"
           />
         </div>
@@ -59,12 +62,16 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue'
 import InterviewSetup from './InterviewSetup.vue'
 import InterviewStatusBar from './InterviewStatusBar.vue'
 import ChatPanel from './ChatPanel.vue'
 import InterviewControlBar from './InterviewControlBar.vue'
 import QuestionSuggestion from './QuestionSuggestion.vue'
 import type { Message, SuggestedQuestion, InterviewConfig, ResumeInterestPoint } from '@/composables/useInterviewAssist'
+
+// ChatPanel 组件引用
+const chatPanelRef = ref<InstanceType<typeof ChatPanel> | null>(null)
 
 const props = defineProps<{
   isActive: boolean
@@ -105,8 +112,18 @@ const handleUseSuggestion = (suggestion: SuggestedQuestion) => {
   emit('useSuggestion', suggestion)
 }
 
+// 编辑建议问题：填充到输入框
+const handleEditSuggestion = (suggestion: SuggestedQuestion) => {
+  chatPanelRef.value?.setQuestionInput(suggestion.question)
+}
+
 const handleUseInterestPoint = (point: ResumeInterestPoint) => {
   emit('useInterestPoint', point.id)
+}
+
+// 编辑兴趣点问题：填充到输入框
+const handleEditInterestPoint = (point: ResumeInterestPoint) => {
+  chatPanelRef.value?.setQuestionInput(point.question)
 }
 </script>
 

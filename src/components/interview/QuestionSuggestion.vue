@@ -88,14 +88,32 @@
               :key="q.id"
               class="question-card"
               :style="{ '--delay': index * 0.1 + 's' }"
-              @click="handleUse(q)"
             >
               <div class="card-number">{{ index + 1 }}</div>
               <div class="card-content">
                 <p class="question-text">{{ q.question }}</p>
               </div>
-              <div class="card-action">
-                <el-icon><Right /></el-icon>
+              <div class="card-actions">
+                <el-tooltip content="编辑后发送" placement="top">
+                  <el-button
+                    type="info"
+                    text
+                    size="small"
+                    :icon="Edit"
+                    @click="handleEdit(q, $event)"
+                    class="edit-btn"
+                  />
+                </el-tooltip>
+                <el-tooltip content="直接发送" placement="top">
+                  <el-button
+                    type="primary"
+                    text
+                    size="small"
+                    :icon="Promotion"
+                    @click="handleUse(q)"
+                    class="send-btn"
+                  />
+                </el-tooltip>
               </div>
             </div>
           </transition-group>
@@ -118,7 +136,6 @@
               :key="q.id"
               class="question-card alt"
               :style="{ '--delay': (followupQuestions.length + index) * 0.1 + 's' }"
-              @click="handleUse(q)"
             >
               <div class="card-angle">
                 <el-tag size="small" type="info">{{ q.angle }}</el-tag>
@@ -126,8 +143,27 @@
               <div class="card-content">
                 <p class="question-text">{{ q.question }}</p>
               </div>
-              <div class="card-action">
-                <el-icon><Right /></el-icon>
+              <div class="card-actions">
+                <el-tooltip content="编辑后发送" placement="top">
+                  <el-button
+                    type="info"
+                    text
+                    size="small"
+                    :icon="Edit"
+                    @click="handleEdit(q, $event)"
+                    class="edit-btn"
+                  />
+                </el-tooltip>
+                <el-tooltip content="直接发送" placement="top">
+                  <el-button
+                    type="primary"
+                    text
+                    size="small"
+                    :icon="Promotion"
+                    @click="handleUse(q)"
+                    class="send-btn"
+                  />
+                </el-tooltip>
               </div>
             </div>
           </transition-group>
@@ -156,7 +192,7 @@
 import { computed } from 'vue'
 import {
   Promotion, RefreshRight, Close, ChatDotRound, Grid,
-  Right, Document, InfoFilled, Star
+  Right, Document, InfoFilled, Star, Edit
 } from '@element-plus/icons-vue'
 import type { SuggestedQuestion, ResumeInterestPoint } from '@/composables/useInterviewAssist'
 
@@ -172,7 +208,9 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   use: [suggestion: SuggestedQuestion]
+  edit: [suggestion: SuggestedQuestion]  // 新增：编辑问题
   useInterestPoint: [point: ResumeInterestPoint]
+  editInterestPoint: [point: ResumeInterestPoint]  // 新增：编辑兴趣点
   dismiss: []
   refresh: []
 }>()
@@ -196,8 +234,18 @@ const handleUse = (suggestion: SuggestedQuestion) => {
   emit('use', suggestion)
 }
 
+const handleEdit = (suggestion: SuggestedQuestion, event: Event) => {
+  event.stopPropagation()  // 阻止冒泡，避免触发卡片的 click
+  emit('edit', suggestion)
+}
+
 const handleUseInterestPoint = (point: ResumeInterestPoint) => {
   emit('useInterestPoint', point)
+}
+
+const handleEditInterestPoint = (point: ResumeInterestPoint, event: Event) => {
+  event.stopPropagation()
+  emit('editInterestPoint', point)
 }
 </script>
 
@@ -480,6 +528,48 @@ const handleUseInterestPoint = (point: ResumeInterestPoint) => {
       font-size: 14px;
       color: #667eea;
     }
+  }
+  
+  .card-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    opacity: 0;
+    transform: translateX(-8px);
+    transition: all 0.25s ease;
+    
+    .edit-btn, .send-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      transition: all 0.2s ease;
+      
+      &:hover {
+        transform: scale(1.1);
+      }
+    }
+    
+    .edit-btn {
+      background: #f3f4f6;
+      
+      &:hover {
+        background: #e5e7eb;
+      }
+    }
+    
+    .send-btn {
+      background: #eff6ff;
+      
+      &:hover {
+        background: #dbeafe;
+      }
+    }
+  }
+  
+  &:hover .card-actions {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
