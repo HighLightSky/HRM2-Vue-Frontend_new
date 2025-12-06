@@ -355,8 +355,6 @@ export function useInterviewAssist() {
       const result = await interviewAssistApi.recordQA(sessionId.value, {
         question: {
           content: question,
-          source: questionData?.source || 'hr_custom',
-          category: questionData?.category || '',
           expected_skills: questionData?.expected_skills || [],
           difficulty: questionData?.difficulty || 5
         },
@@ -442,12 +440,10 @@ export function useInterviewAssist() {
   const createSession = async (resumeId: string): Promise<boolean> => {
     try {
       const session = await interviewAssistApi.createSession({
-        resume_data_id: resumeId,
-        interviewer_name: '面试官'
+        resume_data_id: resumeId
       })
       sessionId.value = session.session_id
       resumeDataId.value = resumeId
-      resumeHighlights.value = session.resume_highlights || []
       return true
     } catch (error) {
       console.error('创建会话失败:', error)
