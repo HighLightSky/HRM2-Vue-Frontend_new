@@ -81,7 +81,9 @@
           :messages="messages"
           :suggested-questions="suggestedQuestions"
           :show-suggestions="showSuggestions"
+          :is-loading-questions="isLoadingQuestions"
           :config="config"
+          :interest-points="interestPoints"
           :stats="stats"
           @start="handleStartLive"
           @pause="pauseInterview"
@@ -91,9 +93,11 @@
           @ask="askQuestion"
           @submit="submitAnswer"
           @use-suggestion="useSuggestedQuestion"
+          @use-interest-point="askInterestPointQuestion"
           @clear-suggestions="clearSuggestions"
           @update-config="updateConfig"
           @toggle-recording="toggleRecording"
+          @select-candidate="handleSelectCandidate"
         />
       </transition>
     </div>
@@ -150,7 +154,12 @@ const {
   selectedCandidate,
   suggestedQuestions,
   showSuggestions,
+  isLoadingQuestions,
+  interestPoints,
+  askInterestPointQuestion,
   stats,
+  createSession,
+  fetchQuestionPool,
   startInterview,
   pauseInterview,
   resumeInterview,
@@ -185,6 +194,14 @@ const handleStartAI = (candidateType: string) => {
 const handleStartLive = () => {
   updateConfig({ mode: 'live-interview' })
   startInterview()
+}
+
+// 选择候选人后创建会话并获取兴趣点
+const handleSelectCandidate = async (candidate: { name: string; position: string; resumeId: string }) => {
+  // 尝试创建后端会话
+  await createSession(candidate.resumeId)
+  // 无论后端是否成功，都获取问题池和兴趣点（失败时使用本地模拟）
+  await fetchQuestionPool()
 }
 
 // 切换录音状态（由子组件控制，这里只同步状态）

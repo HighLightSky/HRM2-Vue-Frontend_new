@@ -25,33 +25,43 @@
       </div>
     </div>
     
-    <!-- 加载动画 -->
+    <!-- 问题列表 -->
     <transition name="fade" mode="out-in">
-      <div v-if="!visible && countdown > 0" class="loading-state">
-        <div class="countdown-ring">
-          <svg viewBox="0 0 100 100">
-            <circle
-              class="ring-bg"
-              cx="50"
-              cy="50"
-              r="45"
-            />
-            <circle
-              class="ring-progress"
-              cx="50"
-              cy="50"
-              r="45"
-              :style="{ strokeDashoffset: dashOffset }"
-            />
-          </svg>
-          <span class="countdown-text">{{ countdown }}s</span>
+      <div v-if="visible || unaskedInterestPoints.length" class="suggestions-content">
+        <!-- 简历兴趣点 -->
+        <div class="suggestion-group" v-if="unaskedInterestPoints.length">
+          <div class="group-header">
+            <div class="group-badge interest">
+              <el-icon><Star /></el-icon>
+            </div>
+            <div class="group-info">
+              <h4>简历兴趣点</h4>
+              <p>基于简历和初筛评估提取的兴趣点问题</p>
+            </div>
+          </div>
+          <transition-group name="list" tag="div" class="question-list interest">
+            <div
+              v-for="(point, index) in unaskedInterestPoints"
+              :key="point.id"
+              class="question-card interest"
+              :style="{ '--delay': index * 0.1 + 's' }"
+              @click="handleUseInterestPoint(point)"
+            >
+              <div class="card-icon-wrapper">
+                <el-icon><Star /></el-icon>
+              </div>
+              <div class="card-content">
+                <p class="interest-content">{{ point.content }}</p>
+                <p class="question-text">{{ point.question }}</p>
+              </div>
+              <div class="card-action">
+                <el-icon><Right /></el-icon>
+              </div>
+            </div>
+          </transition-group>
         </div>
-        <p class="loading-text">正在分析回答，生成推荐问题...</p>
-      </div>
-      
-      <!-- 问题列表 -->
-      <div v-else-if="suggestions.length" class="suggestions-content">
-        <!-- 追问 -->
+        
+        <!-- 追问建议 -->
         <div class="suggestion-group" v-if="followupQuestions.length">
           <div class="group-header">
             <div class="group-badge followup">
@@ -114,13 +124,25 @@
         </div>
       </div>
       
+      <!-- 加载状态 -->
+      <div v-else-if="loading" class="loading-state">
+        <div class="loading-icon">
+          <el-icon class="is-loading"><Promotion /></el-icon>
+        </div>
+        <h4>正在生成问题...</h4>
+        <p>AI 正在分析简历并生成面试问题，请稍候</p>
+        <div class="loading-progress">
+          <div class="progress-bar"></div>
+        </div>
+      </div>
+      
       <!-- 空状态 -->
       <div v-else class="empty-state">
         <div class="empty-icon">
           <el-icon><Document /></el-icon>
         </div>
         <h4>等待回答</h4>
-        <p>候选人回答后，系统将自动推荐追问和候选问题</p>
+        <p>候选人回答后，系统将推荐追问和候选问题</p>
       </div>
     </transition>
     
@@ -136,20 +158,22 @@
 import { computed } from 'vue'
 import {
   Promotion, RefreshRight, Close, ChatDotRound, Grid,
-  Right, Document, InfoFilled
+  Right, Document, InfoFilled, Star
 } from '@element-plus/icons-vue'
-import type { SuggestedQuestion } from '@/composables/useInterviewAssist'
+import type { SuggestedQuestion, ResumeInterestPoint } from '@/composables/useInterviewAssist'
 
 const props = defineProps<{
   suggestions: SuggestedQuestion[]
   visible: boolean
-  countdown: number
+  loading?: boolean
   followupCount: number
   alternativeCount: number
+  interestPoints?: ResumeInterestPoint[]
 }>()
 
 const emit = defineEmits<{
   use: [suggestion: SuggestedQuestion]
+  useInterestPoint: [point: ResumeInterestPoint]
   dismiss: []
   refresh: []
 }>()
@@ -163,15 +187,18 @@ const alternativeQuestions = computed(() =>
   props.suggestions.filter(s => s.type === 'alternative')
 )
 
-const dashOffset = computed(() => {
-  const circumference = 2 * Math.PI * 45
-  const progress = props.countdown / 10 // 假设最大10秒
-  return circumference * (1 - progress)
-})
+// 未提问的兴趣点
+const unaskedInterestPoints = computed(() =>
+  (props.interestPoints || []).filter(p => !p.isAsked)
+)
 
 // 方法
 const handleUse = (suggestion: SuggestedQuestion) => {
   emit('use', suggestion)
+}
+
+const handleUseInterestPoint = (point: ResumeInterestPoint) => {
+  emit('useInterestPoint', point)
 }
 </script>
 
@@ -306,6 +333,10 @@ const handleUse = (suggestion: SuggestedQuestion) => {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
       }
       
+      &.interest {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      }
+      
       .el-icon {
         font-size: 20px;
         color: white;
@@ -367,6 +398,36 @@ const handleUse = (suggestion: SuggestedQuestion) => {
     }
   }
   
+  &.interest {
+    &:hover {
+      border-color: #f59e0b;
+      box-shadow: 0 4px 16px rgba(245, 158, 11, 0.15);
+    }
+    
+    .card-icon-wrapper {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      
+      .el-icon {
+        font-size: 16px;
+        color: white;
+      }
+    }
+    
+    .interest-content {
+      font-size: 12px;
+      color: #f59e0b;
+      margin: 0 0 4px;
+      font-weight: 500;
+    }
+  }
+  
   .card-number {
     width: 28px;
     height: 28px;
@@ -419,6 +480,74 @@ const handleUse = (suggestion: SuggestedQuestion) => {
       color: #667eea;
     }
   }
+}
+
+.loading-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 20px;
+  
+  .loading-icon {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #667eea20 0%, #764ba220 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+    
+    .el-icon {
+      font-size: 40px;
+      color: #667eea;
+      animation: spin 1.5s linear infinite;
+    }
+  }
+  
+  h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #667eea;
+    margin: 0 0 8px;
+  }
+  
+  p {
+    font-size: 14px;
+    color: #9ca3af;
+    margin: 0 0 20px;
+    text-align: center;
+    max-width: 240px;
+  }
+  
+  .loading-progress {
+    width: 200px;
+    height: 4px;
+    background: #e5e7eb;
+    border-radius: 2px;
+    overflow: hidden;
+    
+    .progress-bar {
+      height: 100%;
+      width: 30%;
+      background: linear-gradient(90deg, #667eea, #764ba2);
+      border-radius: 2px;
+      animation: progress 1.5s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes progress {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(200%); }
+  100% { transform: translateX(-100%); }
 }
 
 .empty-state {

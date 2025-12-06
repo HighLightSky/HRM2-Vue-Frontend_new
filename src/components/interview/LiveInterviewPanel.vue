@@ -49,19 +49,19 @@
         </div>
         
         <div class="config-card">
-          <div class="card-icon timer">
-            <el-icon><Timer /></el-icon>
+          <div class="card-icon interest">
+            <el-icon><Star /></el-icon>
           </div>
           <div class="card-body">
-            <h4>推荐延迟</h4>
-            <p>回答结束后多少秒显示推荐</p>
+            <h4>简历兴趣点</h4>
+            <p>从简历中提取的可提问兴趣点数量</p>
             <el-slider
-              v-model="suggestionDelaySeconds"
-              :min="5"
-              :max="30"
-              :step="5"
+              v-model="localConfig.interestPointCount"
+              :min="1"
+              :max="3"
+              :step="1"
               show-stops
-              :marks="{ 5: '5s', 10: '10s', 15: '15s', 20: '20s', 30: '30s' }"
+              :marks="{ 1: '1个', 2: '2个', 3: '3个' }"
             />
           </div>
         </div>
@@ -347,10 +347,12 @@
           <QuestionSuggestion
             :suggestions="suggestedQuestions"
             :visible="showSuggestions"
-            :countdown="suggestionCountdown"
+            :loading="isLoadingQuestions"
             :followup-count="localConfig.followupCount"
             :alternative-count="localConfig.alternativeCount"
+            :interest-points="interestPoints"
             @use="handleUseSuggestion"
+            @use-interest-point="handleUseInterestPoint"
             @dismiss="$emit('clearSuggestions')"
           />
         </div>
@@ -371,10 +373,10 @@
 import { ref, computed, watch, nextTick, reactive, onMounted, onUnmounted } from 'vue'
 import {
   Microphone, VideoPlay, VideoPause, Close, Download, Check,
-  QuestionFilled, ChatLineRound, Timer, Grid, Edit, Promotion, User, Warning
+  QuestionFilled, ChatLineRound, Grid, Edit, Promotion, User, Warning, Star
 } from '@element-plus/icons-vue'
 import QuestionSuggestion from './QuestionSuggestion.vue'
-import type { Message, SuggestedQuestion, InterviewConfig } from '@/composables/useInterviewAssist'
+import type { Message, SuggestedQuestion, InterviewConfig, ResumeInterestPoint } from '@/composables/useInterviewAssist'
 import { useSpeechRecognition } from '@/composables/useSpeechRecognition'
 import type { PositionData, ResumeData } from '@/types'
 import { positionApi } from '@/api'
@@ -386,7 +388,9 @@ const props = defineProps<{
   messages: Message[]
   suggestedQuestions: SuggestedQuestion[]
   showSuggestions: boolean
+  isLoadingQuestions?: boolean
   config: InterviewConfig
+  interestPoints: ResumeInterestPoint[]
   stats: {
     totalQuestions: number
     totalFollowups: number
@@ -403,6 +407,7 @@ const emit = defineEmits<{
   ask: [question: string]
   submit: [answer: string]
   useSuggestion: [suggestion: SuggestedQuestion]
+  useInterestPoint: [pointId: string]
   clearSuggestions: []
   updateConfig: [config: Partial<InterviewConfig>]
   toggleRecording: [isRecording: boolean]
@@ -412,10 +417,9 @@ const emit = defineEmits<{
 // 本地配置（可调节）
 const localConfig = reactive({
   followupCount: props.config.followupCount,
-  alternativeCount: props.config.alternativeCount
+  alternativeCount: props.config.alternativeCount,
+  interestPointCount: props.config.interestPointCount
 })
-
-const suggestionDelaySeconds = ref(props.config.suggestionDelay / 1000)
 
 // 准备步骤状态
 const step1Done = ref(false)
@@ -440,9 +444,6 @@ const currentResumes = computed(() => {
 const questionInput = ref('')
 const answerInput = ref('')
 const chatContainerRef = ref<HTMLElement | null>(null)
-
-// 倒计时
-const suggestionCountdown = ref(0)
 
 // 语音识别相关
 const recognizedTextBeforeStart = ref('') // 记录开始录音前输入框的内容
@@ -579,7 +580,7 @@ const handleStart = () => {
   emit('updateConfig', {
     followupCount: localConfig.followupCount,
     alternativeCount: localConfig.alternativeCount,
-    suggestionDelay: suggestionDelaySeconds.value * 1000
+    interestPointCount: localConfig.interestPointCount
   })
   emit('start')
 }
@@ -627,17 +628,18 @@ const handleUseSuggestion = (suggestion: SuggestedQuestion) => {
   emit('useSuggestion', suggestion)
 }
 
+const handleUseInterestPoint = (point: ResumeInterestPoint) => {
+  emit('useInterestPoint', point.id)
+}
+
 // 监听配置变化
 watch(localConfig, (newConfig) => {
   emit('updateConfig', {
     followupCount: newConfig.followupCount,
-    alternativeCount: newConfig.alternativeCount
+    alternativeCount: newConfig.alternativeCount,
+    interestPointCount: newConfig.interestPointCount
   })
 }, { deep: true })
-
-watch(suggestionDelaySeconds, (newValue) => {
-  emit('updateConfig', { suggestionDelay: newValue * 1000 })
-})
 
 // 自动滚动
 watch(() => props.messages.length, () => {
@@ -729,7 +731,7 @@ watch(() => props.messages.length, () => {
     margin-bottom: 16px;
     
     &.alt { background: linear-gradient(135deg, #10b981 0%, #059669 100%); }
-    &.timer { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
+    &.interest { background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%); }
     
     .el-icon {
       font-size: 24px;

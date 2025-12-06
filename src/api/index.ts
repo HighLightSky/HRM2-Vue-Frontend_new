@@ -727,9 +727,11 @@ export const interviewAssistApi = {
     candidate_level?: string
     count_per_category?: number
     focus_on_resume?: boolean
+    interest_point_count?: number  // 兴趣点数量 1-3
   }): Promise<{
     question_pool: InterviewQuestion[]
     resume_highlights: string[]
+    interest_points?: Array<{ content: string; question: string; reason?: string }>
   }> => {
     const response = await fetch(`${API_BASE}/interview-assist/sessions/${sessionId}/generate-questions/`, {
       method: 'POST',

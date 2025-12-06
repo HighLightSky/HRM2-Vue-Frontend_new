@@ -42,7 +42,15 @@ export interface InterviewConfig {
   domain: string
   followupCount: number
   alternativeCount: number
-  suggestionDelay: number // 毫秒
+  interestPointCount: number // 简历兴趣点数量 1-3
+}
+
+// 简历兴趣点类型
+export interface ResumeInterestPoint {
+  id: string
+  content: string
+  question: string // 转化为的面试问题
+  isAsked: boolean // 是否已提问
 }
 
 export interface CandidateProfile {
@@ -172,7 +180,7 @@ export function useInterviewAssist() {
     domain: 'tech',
     followupCount: 2,
     alternativeCount: 3,
-    suggestionDelay: 10000 // 10秒
+    interestPointCount: 2 // 默认2个兴趣点
   })
 
   // 会话状态（后端集成）
@@ -199,7 +207,10 @@ export function useInterviewAssist() {
   // 问题建议状态
   const suggestedQuestions = ref<SuggestedQuestion[]>([])
   const showSuggestions = ref(false)
-  const suggestionTimer = ref<number | null>(null)
+  const isLoadingQuestions = ref(false)  // 问题加载状态
+  
+  // 简历兴趣点状态
+  const interestPoints = ref<ResumeInterestPoint[]>([])
 
   // 统计数据
   const stats = reactive({
@@ -233,15 +244,59 @@ export function useInterviewAssist() {
   // 模拟打字效果
   const simulateTyping = async (content: string, role: Message['role']) => {
     const message = addMessage(role, '', { isTyping: true })
+    const messageIndex = messages.value.length - 1
     const chars = content.split('')
     
     for (let i = 0; i < chars.length; i++) {
-      message.content += chars[i]
+      // 通过数组索引更新，确保 Vue 响应式检测到变化
+      const current = messages.value[messageIndex]!
+      messages.value[messageIndex] = {
+        ...current,
+        content: current.content + chars[i]
+      }
       await new Promise(resolve => setTimeout(resolve, 20 + Math.random() * 30))
     }
     
-    message.isTyping = false
-    return message
+    // 更新完成状态
+    const final = messages.value[messageIndex]!
+    messages.value[messageIndex] = {
+      ...final,
+      isTyping: false
+    }
+    return messages.value[messageIndex]!
+  }
+
+  // 根据角度生成单个候选问题
+  const generateAlternativeQuestion = (question: string, answer: string, angle: string): string => {
+    const angleTemplates: Record<string, string[]> = {
+      '反向思考': [
+        '如果重新做这个决定，您会有什么不同的选择？',
+        '假设方案失败了，您认为最可能的原因是什么？',
+        '如果资源减半，您会如何调整方案？'
+      ],
+      '实际案例': [
+        '能否分享一个具体的案例来说明您的观点？',
+        '在实际项目中，这个方案遇到过哪些挑战？',
+        '您能举一个失败的例子并说明学到了什么吗？'
+      ],
+      '团队协作': [
+        '在这个过程中，您是如何与团队其他成员协作的？',
+        '遇到团队意见分歧时，您通常如何处理？',
+        '您如何确保团队成员都理解并认同您的方案？'
+      ],
+      '技术深度': [
+        '能否详细解释一下底层的技术原理？',
+        '这个方案的性能瓶颈在哪里？如何优化？',
+        '从架构角度，这个设计有哪些权衡考量？'
+      ],
+      '问题解决': [
+        '遇到最大的技术难题是什么？如何解决的？',
+        '如果现在重新设计，您会做哪些改进？',
+        '这个方案的局限性是什么？有什么替代方案？'
+      ]
+    }
+    const templates = angleTemplates[angle] ?? angleTemplates['实际案例']!
+    return templates[Math.floor(Math.random() * templates.length)]!
   }
 
   // 生成追问和候选问题
@@ -282,18 +337,34 @@ export function useInterviewAssist() {
     return suggestions
   }
 
-  // 启动问题建议计时器
-  const startSuggestionTimer = (questionContext: string, answerContext: string) => {
-    if (suggestionTimer.value) {
-      clearTimeout(suggestionTimer.value)
+  // 立即显示问题建议
+  const showSuggestionsImmediately = (questionContext: string, answerContext: string) => {
+    suggestedQuestions.value = generateSuggestions(questionContext, answerContext)
+    showSuggestions.value = true
+  }
+  
+  // 设置兴趣点（从后端获取或本地生成）
+  const setInterestPoints = (points: Array<{ content: string; question: string }>) => {
+    interestPoints.value = points.slice(0, config.interestPointCount).map((p, index) => ({
+      id: `interest_${Date.now()}_${index}`,
+      content: p.content,
+      question: p.question,
+      isAsked: false
+    }))
+  }
+  
+  // 使用兴趣点提问
+  const askInterestPointQuestion = (pointId: string) => {
+    const point = interestPoints.value.find(p => p.id === pointId)
+    if (point && !point.isAsked) {
+      point.isAsked = true
+      askQuestion(point.question)
     }
-    
-    showSuggestions.value = false
-    
-    suggestionTimer.value = window.setTimeout(() => {
-      suggestedQuestions.value = generateSuggestions(questionContext, answerContext)
-      showSuggestions.value = true
-    }, config.suggestionDelay)
+  }
+  
+  // 获取未提问的兴趣点
+  const getUnaskedInterestPoints = () => {
+    return interestPoints.value.filter(p => !p.isAsked)
   }
 
   // 评估回答（本地模拟 - AI演示模式使用）
@@ -378,10 +449,10 @@ export function useInterviewAssist() {
         confidenceLevel: backendEval.confidence_level
       }
 
-      // 转换追问建议
+      // 转换追问建议（根据配置的数量）
       const suggestions: SuggestedQuestion[] = []
       const followups = result.followup_recommendation.suggested_followups || []
-      followups.forEach((f: FollowupSuggestion, i: number) => {
+      followups.slice(0, config.followupCount).forEach((f: FollowupSuggestion, i: number) => {
         suggestions.push({
           id: generateId(),
           question: f.question,
@@ -389,6 +460,19 @@ export function useInterviewAssist() {
           priority: i + 1
         })
       })
+
+      // 生成候选问题（本地生成，根据配置的数量）
+      const alternativeAngles = ['反向思考', '实际案例', '团队协作', '技术深度', '问题解决'] as const
+      for (let i = 0; i < config.alternativeCount; i++) {
+        const angle = alternativeAngles[i % alternativeAngles.length]!
+        suggestions.push({
+          id: generateId(),
+          question: generateAlternativeQuestion(question, answer, angle),
+          type: 'alternative',
+          angle,
+          priority: config.followupCount + i + 1
+        })
+      }
 
       return {
         evaluation,
@@ -447,25 +531,114 @@ export function useInterviewAssist() {
       return true
     } catch (error) {
       console.error('创建会话失败:', error)
+      // 后端不可用时，仍然设置 resumeDataId，使用本地模式
+      resumeDataId.value = resumeId
+      ElMessage.warning('后端服务不可用，将使用本地模拟模式')
       return false
     }
   }
 
-  // 从后端获取问题池
+  // 本地生成模拟兴趣点（后端不可用时使用）
+  const generateLocalInterestPoints = () => {
+    const mockInterestPoints = [
+      {
+        content: '项目管理经验',
+        question: '请详细介绍您在项目管理方面的经验，特别是如何处理项目延期或资源冲突的情况？'
+      },
+      {
+        content: '技术架构能力',
+        question: '您在简历中提到参与过系统架构设计，能否具体说明您做了哪些架构决策及其原因？'
+      },
+      {
+        content: '团队协作',
+        question: '请分享一个您在团队中解决冲突或推动协作的具体案例？'
+      }
+    ]
+    setInterestPoints(mockInterestPoints.slice(0, config.interestPointCount))
+  }
+  
+  // 从问题池初始化候选问题（面试开始时使用）
+  const initializeSuggestionsFromPool = () => {
+    const suggestions: SuggestedQuestion[] = []
+    
+    // 从问题池中选取候选问题
+    const poolQuestions = questionPool.value.slice(0, config.alternativeCount)
+    poolQuestions.forEach((q, i) => {
+      suggestions.push({
+        id: generateId(),
+        question: q.question,
+        type: 'alternative',
+        angle: q.category || '简历相关',
+        priority: i + 1
+      })
+    })
+    
+    // 如果问题池为空，生成本地候选问题
+    if (suggestions.length === 0) {
+      const angles = ['反向思考', '实际案例', '团队协作']
+      for (let i = 0; i < config.alternativeCount; i++) {
+        const angle = angles[i % angles.length]!
+        suggestions.push({
+          id: generateId(),
+          question: generateAlternativeQuestion('', '', angle),
+          type: 'alternative',
+          angle,
+          priority: i + 1
+        })
+      }
+    }
+    
+    suggestedQuestions.value = suggestions
+    showSuggestions.value = true
+  }
+
+  // 从后端获取问题池和兴趣点
   const fetchQuestionPool = async (): Promise<void> => {
-    if (!sessionId.value) return
+    // 防止重复调用
+    if (isLoadingQuestions.value) {
+      console.log('问题池正在加载中，跳过重复请求')
+      return
+    }
+    
+    isLoadingQuestions.value = true
+    
+    // 如果没有后端会话，使用本地模拟
+    if (!sessionId.value) {
+      console.log('使用本地模拟兴趣点')
+      generateLocalInterestPoints()
+      initializeSuggestionsFromPool()
+      isLoadingQuestions.value = false
+      return
+    }
 
     try {
       const result = await interviewAssistApi.generateQuestions(sessionId.value, {
         categories: ['简历相关', '专业能力', '行为面试'],
         candidate_level: 'senior',
         count_per_category: 2,
-        focus_on_resume: true
+        focus_on_resume: true,
+        interest_point_count: config.interestPointCount
       })
       questionPool.value = result.question_pool
       resumeHighlights.value = result.resume_highlights
+      
+      // 设置兴趣点
+      if (result.interest_points && result.interest_points.length > 0) {
+        setInterestPoints(result.interest_points)
+      } else {
+        // 如果后端没返回兴趣点，使用本地模拟
+        generateLocalInterestPoints()
+      }
+      
+      // 从问题池初始化候选问题
+      initializeSuggestionsFromPool()
     } catch (error) {
       console.error('获取问题池失败:', error)
+      // 后端失败时使用本地模拟
+      generateLocalInterestPoints()
+      initializeSuggestionsFromPool()
+    } finally {
+      isLoadingQuestions.value = false
     }
   }
 
@@ -492,12 +665,14 @@ export function useInterviewAssist() {
     
     addMessage('system', greeting)
     
-    // 真人面试模式：如果有会话，获取问题池
-    if (config.mode === 'live-interview' && sessionId.value) {
+    // 真人面试模式：如果有会话且尚未获取问题池且不在加载中，则获取
+    if (config.mode === 'live-interview' && sessionId.value && questionPool.value.length === 0 && !isLoadingQuestions.value) {
       await fetchQuestionPool()
-      if (questionPool.value.length > 0) {
-        addMessage('system', `已根据简历生成 ${questionPool.value.length} 个候选问题，可从问题池中选择或自由提问。`)
-      }
+    }
+    
+    // 显示问题池信息
+    if (questionPool.value.length > 0) {
+      addMessage('system', `已根据简历生成 ${questionPool.value.length} 个候选问题，可从问题池中选择或自由提问。`)
     }
     
     ElMessage.success('面试已开始')
@@ -517,9 +692,6 @@ export function useInterviewAssist() {
   // 暂停面试
   const pauseInterview = () => {
     isPaused.value = true
-    if (suggestionTimer.value) {
-      clearTimeout(suggestionTimer.value)
-    }
     ElMessage.info('面试已暂停')
   }
 
@@ -542,10 +714,6 @@ export function useInterviewAssist() {
 
     isInterviewActive.value = false
     isPaused.value = false
-    
-    if (suggestionTimer.value) {
-      clearTimeout(suggestionTimer.value)
-    }
     
     // 计算持续时间
     if (stats.startTime) {
@@ -603,12 +771,14 @@ export function useInterviewAssist() {
       
       // 评估回答
       const evaluation = evaluateAnswerLocal(response)
-      message.evaluation = evaluation
+      if (message) {
+        message.evaluation = evaluation
+      }
       
       isAITyping.value = false
       
-      // 启动问题建议计时器
-      startSuggestionTimer(question, response)
+      // 立即显示问题建议
+      showSuggestionsImmediately(question, response)
     }
   }
 
@@ -628,6 +798,7 @@ export function useInterviewAssist() {
     // 根据模式选择评估方式
     if (useBackendApi.value && sessionId.value) {
       // 使用后端 API 评估（真人面试模式）
+      isLoadingQuestions.value = true  // 显示加载状态
       try {
         const result = await evaluateAnswerApi(
           currentQuestion.value, 
@@ -642,18 +813,20 @@ export function useInterviewAssist() {
           showSuggestions.value = true
         } else {
           // 后端没有返回建议，使用本地生成
-          startSuggestionTimer(currentQuestion.value, answer)
+          showSuggestionsImmediately(currentQuestion.value, answer)
         }
       } catch (error) {
         console.error('API评估失败:', error)
         message.evaluation = evaluateAnswerLocal(answer)
-        startSuggestionTimer(currentQuestion.value, answer)
+        showSuggestionsImmediately(currentQuestion.value, answer)
+      } finally {
+        isLoadingQuestions.value = false  // 隐藏加载状态
       }
     } else {
       // 使用本地评估（AI模拟模式）
       await new Promise(resolve => setTimeout(resolve, 500))
       message.evaluation = evaluateAnswerLocal(answer)
-      startSuggestionTimer(currentQuestion.value, answer)
+      showSuggestionsImmediately(currentQuestion.value, answer)
     }
     
     // 更新统计
@@ -734,6 +907,13 @@ export function useInterviewAssist() {
     // 问题建议
     suggestedQuestions,
     showSuggestions,
+    isLoadingQuestions,
+    
+    // 简历兴趣点
+    interestPoints,
+    setInterestPoints,
+    askInterestPointQuestion,
+    getUnaskedInterestPoints,
     
     // 统计
     stats,
