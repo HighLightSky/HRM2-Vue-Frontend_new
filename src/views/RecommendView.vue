@@ -105,6 +105,78 @@
       </div>
     </div>
     
+    <!-- 简历内容查看对话框 -->
+    <el-dialog
+      v-model="showResumeDialog"
+      title="简历内容"
+      width="700px"
+      destroy-on-close
+    >
+      <div v-if="selectedResumeContent" class="resume-content-view">
+        <pre class="resume-text">{{ selectedResumeContent }}</pre>
+      </div>
+      <template #footer>
+        <el-button @click="showResumeDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+    
+    <!-- 初筛报告查看对话框 -->
+    <el-dialog
+      v-model="showScreeningDialog"
+      title="简历初筛报告"
+      width="650px"
+      destroy-on-close
+    >
+      <div v-if="selectedScreeningResume" class="screening-report-dialog">
+        <!-- 候选人信息 -->
+        <div class="report-section">
+          <h4>候选人信息</h4>
+          <div class="info-grid">
+            <div class="info-item">
+              <span class="label">姓名:</span>
+              <span class="value">{{ selectedScreeningResume.candidate_name || '未知' }}</span>
+            </div>
+            <div class="info-item">
+              <span class="label">岗位:</span>
+              <span class="value">{{ selectedScreeningResume.position_title || '-' }}</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 初筛评分 -->
+        <div v-if="selectedScreeningResume.screening_score" class="report-section">
+          <h4>初筛评分</h4>
+          <div class="scores-grid">
+            <div class="score-item primary">
+              <span class="score-label">综合评分</span>
+              <span class="score-value">{{ selectedScreeningResume.screening_score.comprehensive_score || '-' }}</span>
+            </div>
+            <div class="score-item">
+              <span class="score-label">HR评分</span>
+              <span class="score-value">{{ selectedScreeningResume.screening_score.hr_score || '-' }}</span>
+            </div>
+            <div class="score-item">
+              <span class="score-label">技术评分</span>
+              <span class="score-value">{{ selectedScreeningResume.screening_score.technical_score || '-' }}</span>
+            </div>
+            <div class="score-item">
+              <span class="score-label">管理评分</span>
+              <span class="score-value">{{ selectedScreeningResume.screening_score.manager_score || '-' }}</span>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 初筛评价 -->
+        <div v-if="selectedScreeningResume.screening_summary" class="report-section">
+          <h4>初筛评价</h4>
+          <div class="summary-content">{{ selectedScreeningResume.screening_summary }}</div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showScreeningDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
+    
     <!-- 面试记录查看对话框 -->
     <el-dialog
       v-model="showInterviewDialog"
@@ -450,9 +522,13 @@ const startCandidateAnalysis = async (resume: ResumeData) => {
 const dimensionScoresMap = ref<Record<string, any>>({})
 
 // ========== 对话框 ==========
+const showResumeDialog = ref(false)
+const showScreeningDialog = ref(false)
 const showInterviewDialog = ref(false)
 const showInterviewReportDialog = ref(false)
 const showComprehensiveDialog = ref(false)
+const selectedResumeContent = ref<string>('')
+const selectedScreeningResume = ref<ResumeData | null>(null)
 const selectedInterviewSession = ref<InterviewSession | null>(null)
 const selectedInterviewReport = ref<InterviewSession['final_report'] | null>(null)
 const selectedComprehensiveAnalysis = ref<{
@@ -465,15 +541,20 @@ const selectedComprehensiveAnalysis = ref<{
 
 // 查看简历详情
 const viewResumeDetail = (resume: ResumeData) => {
-  console.log('查看简历:', resume)
-  // 可以打开详情对话框
+  const content = resume.resume_content
+  if (content) {
+    selectedResumeContent.value = content
+    showResumeDialog.value = true
+  } else {
+    ElMessage.warning('暂无简历内容')
+  }
 }
 
 // 查看初筛报告
 const viewScreeningReport = (resume: ResumeData) => {
-  const url = resume.report_md_url
-  if (url) {
-    window.open(url, '_blank')
+  if (resume.screening_score || resume.screening_summary) {
+    selectedScreeningResume.value = resume
+    showScreeningDialog.value = true
   } else {
     ElMessage.warning('暂无初筛报告')
   }
@@ -788,6 +869,105 @@ onMounted(() => {
 }
 
 // 对话框样式
+.resume-content-view {
+  max-height: 500px;
+  overflow-y: auto;
+  
+  .resume-text {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #374151;
+    background: #f9fafb;
+    padding: 20px;
+    border-radius: 12px;
+    margin: 0;
+  }
+}
+
+.screening-report-dialog {
+  .report-section {
+    margin-bottom: 24px;
+    
+    h4 {
+      margin: 0 0 12px 0;
+      font-size: 15px;
+      font-weight: 600;
+      color: #303133;
+      border-left: 3px solid #667eea;
+      padding-left: 10px;
+    }
+  }
+  
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    
+    .info-item {
+      .label {
+        color: #909399;
+        margin-right: 8px;
+      }
+      .value {
+        color: #303133;
+        font-weight: 500;
+      }
+    }
+  }
+  
+  .scores-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    
+    .score-item {
+      text-align: center;
+      padding: 16px 12px;
+      background: #f5f7fa;
+      border-radius: 12px;
+      
+      &.primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        
+        .score-label {
+          color: rgba(255, 255, 255, 0.9);
+        }
+        .score-value {
+          color: white;
+          font-size: 28px;
+        }
+      }
+      
+      .score-label {
+        display: block;
+        font-size: 12px;
+        color: #909399;
+        margin-bottom: 8px;
+      }
+      
+      .score-value {
+        display: block;
+        font-size: 22px;
+        font-weight: 600;
+        color: #10b981;
+      }
+    }
+  }
+  
+  .summary-content {
+    padding: 16px;
+    background: #f9fafb;
+    border-radius: 12px;
+    font-size: 14px;
+    line-height: 1.8;
+    color: #374151;
+    white-space: pre-wrap;
+  }
+}
+
 .interview-records {
   max-height: 500px;
   overflow-y: auto;
