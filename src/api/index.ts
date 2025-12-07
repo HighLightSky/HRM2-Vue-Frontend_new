@@ -797,6 +797,30 @@ export const interviewAssistApi = {
     }
     const result = await response.json()
     return result.data
+  },
+
+  // 根据简历ID获取面试会话列表
+  getSessionsByResumeId: async (resumeId: string): Promise<Array<{
+    id: string
+    resume_data_id: string
+    qa_records: Array<{ question: string; answer: string }>
+    final_report?: {
+      overall_assessment?: {
+        recommendation_score: number
+        recommendation: string
+        summary: string
+      }
+      highlights?: string[]
+      red_flags?: string[]
+    }
+    created_at: string
+  }>> => {
+    const response = await fetch(`${API_BASE}/interview-assist/sessions/?resume_id=${resumeId}`)
+    if (!response.ok) {
+      throw new Error(`获取会话列表失败: ${response.status}`)
+    }
+    const result = await response.json()
+    return result.data || []
   }
 }
 
