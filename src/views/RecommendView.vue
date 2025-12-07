@@ -171,6 +171,73 @@
         <el-button @click="showInterviewReportDialog = false">关闭</el-button>
       </template>
     </el-dialog>
+    
+    <!-- 综合分析详情对话框 -->
+    <el-dialog
+      v-model="showComprehensiveDialog"
+      title="综合分析详情"
+      width="800px"
+      destroy-on-close
+    >
+      <div v-if="selectedComprehensiveAnalysis" class="comprehensive-analysis">
+        <!-- 总体评分 -->
+        <div class="analysis-header">
+          <div class="score-circle" :class="getComprehensiveScoreClass(selectedComprehensiveAnalysis.score)">
+            <span class="score-value">{{ selectedComprehensiveAnalysis.score }}</span>
+            <span class="score-label">分</span>
+          </div>
+          <div class="header-info">
+            <h3 class="recommendation-label">{{ selectedComprehensiveAnalysis.recommendation }}</h3>
+            <p class="analysis-time" v-if="selectedComprehensiveAnalysis.created_at">
+              分析时间：{{ formatDateTime(selectedComprehensiveAnalysis.created_at) }}
+            </p>
+          </div>
+        </div>
+        
+        <!-- 维度评分雷达 -->
+        <div class="dimension-scores">
+          <h4>多维度 Rubric 评估</h4>
+          <div class="dimension-grid">
+            <div 
+              v-for="(dim, key) in selectedComprehensiveAnalysis.dimensions" 
+              :key="key"
+              class="dimension-item"
+            >
+              <div class="dimension-header">
+                <span class="dimension-name">{{ dim.dimension_name }}</span>
+                <span class="dimension-score" :class="getDimensionScoreClass(dim.dimension_score)">
+                  {{ dim.dimension_score }}/5
+                </span>
+              </div>
+              <el-progress 
+                :percentage="dim.dimension_score * 20" 
+                :stroke-width="8"
+                :color="getDimensionColor(dim.dimension_score)"
+              />
+              <div class="dimension-details">
+                <div v-if="dim.strengths?.length" class="detail-section">
+                  <span class="detail-label">优势：</span>
+                  <span>{{ dim.strengths.join('、') }}</span>
+                </div>
+                <div v-if="dim.weaknesses?.length" class="detail-section weakness">
+                  <span class="detail-label">不足：</span>
+                  <span>{{ dim.weaknesses.join('、') }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- 综合报告 -->
+        <div class="comprehensive-report-text">
+          <h4>综合分析报告</h4>
+          <div class="report-content" v-html="formatReportContent(selectedComprehensiveAnalysis.summary)"></div>
+        </div>
+      </div>
+      <template #footer>
+        <el-button @click="showComprehensiveDialog = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -184,7 +251,7 @@ import { TrophyBase, Plus } from '@element-plus/icons-vue'
 import { CandidateAnalysisCard } from '@/components/recommend'
 
 // API 和类型
-import { positionApi, interviewAssistApi } from '@/api'
+import { positionApi, interviewAssistApi, recommendApi } from '@/api'
 import type { PositionData, ResumeData } from '@/types'
 
 const router = useRouter()
@@ -280,7 +347,7 @@ const analyzingResumes = ref<Set<string>>(new Set())
 const analysisProgress = ref<Record<string, number>>({})
 const analysisStatusTexts = ref<Record<string, string>>({})
 
-// 加载所有简历的面试会话
+// 加载所有简历的面试会话和历史分析结果
 const loadAllInterviewSessions = async () => {
   const allResumes = positionsList.value.flatMap(p => p.resumes || [])
   
@@ -294,8 +361,19 @@ const loadAllInterviewSessions = async () => {
         const latestSession = sessions[0] as InterviewSession
         interviewSessions.value[resume.id] = latestSession
       }
+      
+      // 查询历史综合分析结果
+      const analysis = await recommendApi.getCandidateAnalysis(resume.id)
+      if (analysis) {
+        finalRecommendations.value[resume.id] = {
+          score: analysis.final_score,
+          recommendation: analysis.recommendation.label,
+          summary: analysis.comprehensive_report
+        }
+        dimensionScoresMap.value[resume.id] = analysis.dimension_scores
+      }
     } catch (err) {
-      // 静默处理，可能没有面试记录
+      // 静默处理
     }
   }
 }
@@ -331,64 +409,59 @@ const startCandidateAnalysis = async (resume: ResumeData) => {
   
   analyzingResumes.value.add(resume.id)
   analysisProgress.value[resume.id] = 10
-  analysisStatusTexts.value[resume.id] = '正在收集数据...'
+  analysisStatusTexts.value[resume.id] = '正在启动综合分析...'
   
   try {
-    // 模拟分析过程（后续接入真实的综合分析 Agent）
-    analysisProgress.value[resume.id] = 30
-    analysisStatusTexts.value[resume.id] = '分析简历内容...'
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    // 调用后端综合分析 API
+    analysisProgress.value[resume.id] = 20
+    analysisStatusTexts.value[resume.id] = '正在分析候选人数据...'
     
-    analysisProgress.value[resume.id] = 50
-    analysisStatusTexts.value[resume.id] = '分析初筛结果...'
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    const result = await recommendApi.analyzeCandidate(resume.id)
     
-    analysisProgress.value[resume.id] = 70
-    analysisStatusTexts.value[resume.id] = '分析面试表现...'
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    analysisProgress.value[resume.id] = 90
-    analysisStatusTexts.value[resume.id] = '生成综合建议...'
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    
-    // TODO: 调用后端综合分析 API
-    // const result = await recommendApi.analyzeCandidateFinal(resume.id)
-    
-    // 临时模拟结果
-    const session = interviewSessions.value[resume.id]
-    const screeningScore = resume.screening_score?.comprehensive_score || 60
-    const interviewScore = session?.final_report?.overall_assessment?.recommendation_score || 60
-    const finalScore = Math.round((screeningScore + interviewScore) / 2)
-    
-    let recommendation = '待定'
-    if (finalScore >= 80) recommendation = '强烈推荐'
-    else if (finalScore >= 65) recommendation = '推荐录用'
-    else if (finalScore >= 50) recommendation = '谨慎考虑'
-    else recommendation = '不推荐'
-    
-    finalRecommendations.value[resume.id] = {
-      score: finalScore,
-      recommendation,
-      summary: `综合简历初筛(${screeningScore}分)和面试表现(${interviewScore}分)，该候选人整体评分为${finalScore}分。${recommendation === '强烈推荐' ? '建议优先安排后续流程。' : recommendation === '推荐录用' ? '符合岗位基本要求。' : '需进一步评估。'}`
-    }
-    
+    // 更新进度
     analysisProgress.value[resume.id] = 100
     analysisStatusTexts.value[resume.id] = '分析完成'
-    ElMessage.success('综合分析完成')
     
-  } catch (err) {
+    // 保存结果
+    finalRecommendations.value[resume.id] = {
+      score: result.final_score,
+      recommendation: result.recommendation.label,
+      summary: result.comprehensive_report
+    }
+    
+    // 保存详细维度评分（可用于详情展示）
+    if (!dimensionScoresMap.value) {
+      dimensionScoresMap.value = {}
+    }
+    dimensionScoresMap.value[resume.id] = result.dimension_scores
+    
+    ElMessage.success(`综合分析完成：${result.recommendation.label} (${result.final_score}分)`)
+    
+  } catch (err: any) {
     console.error('综合分析失败:', err)
-    ElMessage.error('综合分析失败')
+    ElMessage.error(err.message || '综合分析失败')
+    analysisStatusTexts.value[resume.id] = '分析失败'
   } finally {
     analyzingResumes.value.delete(resume.id)
   }
 }
 
+// 维度评分详情存储
+const dimensionScoresMap = ref<Record<string, any>>({})
+
 // ========== 对话框 ==========
 const showInterviewDialog = ref(false)
 const showInterviewReportDialog = ref(false)
+const showComprehensiveDialog = ref(false)
 const selectedInterviewSession = ref<InterviewSession | null>(null)
 const selectedInterviewReport = ref<InterviewSession['final_report'] | null>(null)
+const selectedComprehensiveAnalysis = ref<{
+  score: number
+  recommendation: string
+  summary: string
+  dimensions: Record<string, any>
+  created_at?: string
+} | null>(null)
 
 // 查看简历详情
 const viewResumeDetail = (resume: ResumeData) => {
@@ -430,12 +503,22 @@ const viewInterviewReport = (resume: ResumeData) => {
   }
 }
 
-// 查看最终报告
+// 查看最终报告（综合分析详情）
 const viewFinalReport = (resume: ResumeData) => {
   if (!resume.id) return
   const recommendation = finalRecommendations.value[resume.id]
+  const dimensions = dimensionScoresMap.value[resume.id]
+  
   if (recommendation) {
-    ElMessage.info(`综合评分: ${recommendation.score}分 - ${recommendation.recommendation}`)
+    selectedComprehensiveAnalysis.value = {
+      score: recommendation.score,
+      recommendation: recommendation.recommendation,
+      summary: recommendation.summary,
+      dimensions: dimensions || {}
+    }
+    showComprehensiveDialog.value = true
+  } else {
+    ElMessage.warning('暂无综合分析结果')
   }
 }
 
@@ -445,6 +528,49 @@ const getReportScoreClass = (report: InterviewSession['final_report']) => {
   if (score >= 80) return 'score-high'
   if (score >= 60) return 'score-medium'
   return 'score-low'
+}
+
+// 综合分析详情相关函数
+const getComprehensiveScoreClass = (score: number) => {
+  if (score >= 85) return 'score-strong'
+  if (score >= 70) return 'score-good'
+  if (score >= 55) return 'score-cautious'
+  return 'score-not'
+}
+
+const getDimensionScoreClass = (score: number) => {
+  if (score >= 4) return 'dim-excellent'
+  if (score >= 3) return 'dim-good'
+  return 'dim-weak'
+}
+
+const getDimensionColor = (score: number) => {
+  if (score >= 4) return '#10b981'
+  if (score >= 3) return '#3b82f6'
+  if (score >= 2) return '#f59e0b'
+  return '#ef4444'
+}
+
+const formatDateTime = (isoString: string) => {
+  const date = new Date(isoString)
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  })
+}
+
+const formatReportContent = (content: string) => {
+  if (!content) return ''
+  // 简单的 markdown 转 HTML
+  return content
+    .replace(/\n\n/g, '</p><p>')
+    .replace(/\n/g, '<br>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/^/, '<p>')
+    .replace(/$/, '</p>')
 }
 
 // ========== 生命周期 ==========
@@ -787,6 +913,171 @@ onMounted(() => {
   }
 }
 
+// 综合分析详情对话框样式
+.comprehensive-analysis {
+  .analysis-header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    margin-bottom: 24px;
+    padding: 20px;
+    background: linear-gradient(135deg, #f0fdf4 0%, #ecfdf5 100%);
+    border-radius: 16px;
+    
+    .score-circle {
+      width: 100px;
+      height: 100px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      
+      &.score-strong {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+      }
+      &.score-good {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+      }
+      &.score-cautious {
+        background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+        color: white;
+      }
+      &.score-not {
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+      }
+      
+      .score-value {
+        font-size: 32px;
+        font-weight: 700;
+      }
+      
+      .score-label {
+        font-size: 14px;
+        opacity: 0.9;
+      }
+    }
+    
+    .header-info {
+      .recommendation-label {
+        margin: 0 0 8px;
+        font-size: 24px;
+        font-weight: 700;
+        color: #1a1a2e;
+      }
+      
+      .analysis-time {
+        margin: 0;
+        font-size: 13px;
+        color: #6b7280;
+      }
+    }
+  }
+  
+  .dimension-scores {
+    margin-bottom: 24px;
+    
+    h4 {
+      margin: 0 0 16px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #374151;
+    }
+    
+    .dimension-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+    
+    .dimension-item {
+      padding: 16px;
+      background: #f9fafb;
+      border-radius: 12px;
+      
+      .dimension-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        
+        .dimension-name {
+          font-size: 14px;
+          font-weight: 500;
+          color: #374151;
+        }
+        
+        .dimension-score {
+          font-size: 14px;
+          font-weight: 600;
+          
+          &.dim-excellent {
+            color: #10b981;
+          }
+          &.dim-good {
+            color: #3b82f6;
+          }
+          &.dim-weak {
+            color: #f59e0b;
+          }
+        }
+      }
+      
+      .dimension-details {
+        margin-top: 12px;
+        
+        .detail-section {
+          font-size: 12px;
+          color: #6b7280;
+          margin-bottom: 4px;
+          
+          .detail-label {
+            color: #10b981;
+            font-weight: 500;
+          }
+          
+          &.weakness .detail-label {
+            color: #f59e0b;
+          }
+        }
+      }
+    }
+  }
+  
+  .comprehensive-report-text {
+    h4 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-weight: 600;
+      color: #374151;
+    }
+    
+    .report-content {
+      padding: 16px;
+      background: #f9fafb;
+      border-radius: 12px;
+      font-size: 14px;
+      color: #374151;
+      line-height: 1.8;
+      
+      p {
+        margin: 0 0 12px;
+        
+        &:last-child {
+          margin-bottom: 0;
+        }
+      }
+      
+      strong {
+        color: #1a1a2e;
+      }
+    }
+  }
+}
+
 @media (max-width: 1200px) {
   .content-grid {
     grid-template-columns: 1fr;
@@ -800,6 +1091,10 @@ onMounted(() => {
     .header-content {
       flex-direction: column;
     }
+  }
+  
+  .comprehensive-analysis .dimension-scores .dimension-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
